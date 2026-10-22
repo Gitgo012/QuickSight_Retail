@@ -1,10 +1,10 @@
-from pyspark.sql.functions import upper, trim, sum as _sum, countDistinct, col
+from pyspark.sql.functions import *
 from pyspark import pipelines as dp
 
-@dp.table(name="retail_q.retail_gold.fact_sales")
+@dp.table(name="quicksight_retail.quicksight_retail_gold.fact_sales")
 def fact_sales():
-    transactions_df = spark.read.table("retail_q.retail_silver.transactions")
-    opportunity_df = spark.read.table("retail_q.retail_silver.opportunity")
+    transactions_df = spark.read.table("quicksight_retail.quicksight_retail_silver.transactions")
+    opportunity_df = spark.read.table("quicksight_retail.quicksight_retail_silver.opportunity")
     
     joined_df = transactions_df.alias("t").join(
         opportunity_df.alias("o"),
@@ -12,7 +12,7 @@ def fact_sales():
         how="left"
     )
     
-    # Select important columns (customize as needed)
+    # Select important columns 
     selected_df = joined_df.select(
         "t.transaction_id",
         "t.opportunity_name",

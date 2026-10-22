@@ -2,18 +2,17 @@ from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
 @dp.table(
-    name="retail_q.retail_silver.opportunity",
+    name="quicksight_retail.quicksight_retail_silver.opportunity",
     comment="Salesforce opportunity data with core sales fields and data quality checks"
 )
 @dp.expect_or_drop("non-null id", "id IS NOT NULL")
 @dp.expect("non-null name", "name IS NOT NULL")
 @dp.expect("valid amount", "amount IS NULL OR amount >= 0")
 @dp.expect("valid probability", "probability IS NULL OR (probability >= 0 AND probability <= 100)")
-@dp.expect("valid stage",
-           "stage_name IN ('Prospecting','Closed Won','Closed Lost')")
+@dp.expect("valid stage","stage_name IN ('Prospecting','Closed Won','Closed Lost')")
 def opportunity_clean():
     # Read source streaming table
-    source_df = spark.readStream.table("retail_q.salesforce_bronze.opportunity")
+    source_df = spark.readStream.table("quicksight_retail.salesforce_bronze.opportunity")
     
     # Select core sales opportunity columns with lowercase underscore naming
     return source_df.select(
@@ -23,12 +22,13 @@ def opportunity_clean():
         F.col("Name").alias("name"),
         F.col("Description").alias("description"),
         F.col("StageName").alias("stage_name"),
-        F.col("Amount").alias("amount"),
+        F.round(F.col("Amount"),2).cast("decimal(10,2)").alias("amount"),
         F.when(F.col("amount") > 100000, "ENTERPRISE")
          .when(F.col("amount") > 25000, "MID_MARKET")
          .otherwise("SMALL")
          .alias("deal_size"),
-        F.col("Probability").alias("probability"),
+        F.least(F.greatest(F.col("Probability").cast("double"),
+        F.lit(0.0)),F.lit(1.0)).alias("probability"),
         F.col("CloseDate").alias("close_date"),
         F.col("Type").alias("type"),
         F.col("NextStep").alias("next_step"),

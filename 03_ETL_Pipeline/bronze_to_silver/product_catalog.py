@@ -1,63 +1,39 @@
 from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
+
 @dp.table(
-    name="retail_q.retail_silver.product_catalog",
-    comment="Silver layer product catalog with standardized data and data quality rules"
+    name="quicksight_retail.quicksight_retail_silver.product_catalog",
+    comment="Silver layer product catalog with standardised data and DQ rules",
 )
-@dp.expect_or_drop("valid_product_id", "product_id IS NOT NULL AND LENGTH(TRIM(product_id)) > 0")
-@dp.expect_or_drop("valid_product_name", "product_name IS NOT NULL AND LENGTH(TRIM(product_name)) > 0")
-@dp.expect("valid_category", "category IS NOT NULL")
-@dp.expect("valid_price", "unit_price > 0")
+# Rows failing these rules are dropped
+@dp.expect_or_drop("valid_product_id", "product_id IS NOT NULL AND length(trim(product_id)) > 0")
+@dp.expect_or_drop("valid_product_name", "product_name IS NOT NULL AND length(trim(product_name)) > 0")
+@dp.expect_or_drop("valid_category", "category IS NOT NULL AND length(trim(category)) > 0")
+@dp.expect_or_drop("valid_price", "unit_price > 0")
 @dp.expect_or_drop("valid_launch_date", "launch_date IS NOT NULL")
+# Failing rows are kept, but the violation is recorded in the metrics
 @dp.expect("valid_supplier", "supplier_name IS NOT NULL")
 def product_catalog():
-    return (
-        spark.readStream.table("retail_q.postgres_bronze.product_catalog")
-        .select(
-            # Standardize product_id: trim and uppercase
-            F.upper(F.trim(F.col("product_id"))).alias("product_id"),
-            
-            # Standardize product_name: trim and title case
-            F.initcap(F.trim(F.col("product_name"))).alias("product_name"),
-            
-            # Standardize category: trim and title case
-            F.initcap(F.trim(F.col("category"))).alias("category"),
-            
-            # Standardize subcategory: trim and title case, handle nulls
-            F.when(F.col("subcategory").isNotNull(), 
-                   F.initcap(F.trim(F.col("subcategory"))))
-             .otherwise(F.lit("Unknown")).alias("subcategory"),
-            
-            # Standardize brand: trim and title case, handle nulls
-            F.when(F.col("brand").isNotNull(), 
-                   F.initcap(F.trim(F.col("brand"))))
-             .otherwise(F.lit("Unknown")).alias("brand"),
-            
-            # Standardize price: round to 2 decimal places
-            F.round(F.col("unit_price"), 2).alias("unit_price"),
-            
-            # Standardize supplier_name: trim and title case
-            F.initcap(F.trim(F.col("supplier_name"))).alias("supplier_name"),
-            
-            # Keep dates and timestamps as-is
-            F.col("launch_date"),
-            F.when(F.col("unit_price") > 50000, "PREMIUM")
+    source_df = spark.read.table("quicksight_retail.neon_postgres_bronze.product_catalog")
+
+    return source_df.select(
+        F.upper(F.trim(F.col("product_id"))).alias("product_id"),
+        F.initcap(F.trim(F.col("product_name"))).alias("product_name"),
+        F.initcap(F.trim(F.col("category"))).alias("category"),
+        F.coalesce(F.initcap(F.trim(F.col("subcategory"))), F.lit("Unknown")).alias("subcategory"),
+        F.coalesce(F.initcap(F.trim(F.col("brand"))), F.lit("Unknown")).alias("brand"),
+        F.round(F.col("unit_price"), 2).alias("unit_price"),
+        F.initcap(F.trim(F.col("supplier_name"))).alias("supplier_name"),
+        F.col("launch_date"),
+        F.when(F.col("unit_price") > 50000, "PREMIUM")
          .when(F.col("unit_price") > 10000, "MID_RANGE")
          .otherwise("BUDGET")
          .alias("product_segment"),
-            
-            # Keep CDC tracking columns with correct names
-            F.col("__START_AT").alias("start_at"),
-            F.col("__END_AT").alias("end_at"),
-            
-            # Derive is_active from end_at: null means current/active record
-            F.when(F.col("__END_AT").isNull(), F.lit(True)).otherwise(F.lit(False)).alias("is_active"),
-            
-            # Keep updated_at timestamp
-            F.col("updated_at"),
-            
-            # Add processing timestamp for audit trail
-            F.current_timestamp().alias("processed_at")
-        )
+        # CDC tracking columns
+        F.col("__START_AT").alias("start_at"),
+        F.col("__END_AT").alias("end_at"),
+        F.col("__END_AT").isNull().alias("is_active"),
+        F.col("updated_at"),
+        F.current_timestamp().alias("processed_at"),
     )

@@ -2,14 +2,14 @@ from pyspark import pipelines as dp
 from pyspark.sql import functions as F
 
 @dp.table(
-    name="retail_q.retail_silver.account",
+    name="quicksight_retail.quicksight_retail_silver.account",
     comment="Salesforce account data with core business columns and data quality checks"
 )
 @dp.expect_or_drop("non-null id", "id IS NOT NULL")
 @dp.expect("non-null name", "customer_name IS NOT NULL")
 def account_clean():
     # Read source streaming table
-    source_df = spark.readStream.table("retail_q.salesforce_bronze.account")
+    source_df = spark.readStream.table("quicksight_retail.salesforce_bronze.account")
     
     # Select core business columns with lowercase underscore naming
     return source_df.select(
